@@ -33,6 +33,13 @@ yarn-error.*
 # local env files
 .env*.local
 
+# Firebase / credenciales (no subir claves ni servicios)
+firebase-debug.log
+google-services.json
+google-services*.plist
+serviceAccount*.json
+src/services/firebaseConfig.local.ts
+
 # typescript
 *.tsbuildinfo
 

@@ -1,0 +1,883 @@
+import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import {
+    View,
+    Text,
+    ScrollView,
+    Pressable,
+    TextInput,
+    Image,
+    Alert,
+} from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
+import { useAppState } from '../store/AppState';
+import { AddCakeDraft, Cake, CakeShape } from '../types';
+import type { RootTabParamList } from '../../App';
+import { cakesStyles as styles } from '../styles/cakesStyles';
+
+const monthNames = [
+    'Enero',
+    'Febrero',
+    'Marzo',
+    'Abril',
+    'Mayo',
+    'Junio',
+    'Julio',
+    'Agosto',
+    'Septiembre',
+    'Octubre',
+    'Noviembre',
+    'Diciembre',
+];
+
+const weekdayShort = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+
+const shapeOptions: { label: string; value: CakeShape }[] = [
+    { label: 'Redonda', value: 'redonda' },
+    { label: 'Cuadrada', value: 'cuadrada' },
+    { label: 'Otra', value: 'otra' },
+];
+
+const clientColors = ['#FFB3BA', '#FFDFBA', '#FFFFBA', '#BAFFC9', '#BAE1FF', '#E1BAFF'];
+
+const formatDateKey = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+const parseDateKey = (dateKey: string) => {
+    const [year, month, day] = dateKey.split('-').map(Number);
+    return new Date(year, month - 1, day);
+};
+
+const getWeekRange = (dateKey: string) => {
+    const baseDate = parseDateKey(dateKey);
+    const currentDay = baseDate.getDay();
+    const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay;
+    const start = new Date(baseDate);
+    start.setDate(baseDate.getDate() + mondayOffset);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    return {
+        start,
+        end,
+        startKey: formatDateKey(start),
+        endKey: formatDateKey(end),
+    };
+};
+
+const formatShortDate = (date: Date) => `${date.getDate()} ${monthNames[date.getMonth()].slice(0, 3)}`;
+
+const getColorForClient = (cliente?: string | null) => {
+    if (!cliente) return '#ccc';
+    let hash = 0;
+    for (let i = 0; i < cliente.length; i += 1) {
+        hash = (hash + cliente.charCodeAt(i)) % clientColors.length;
+    }
+    return clientColors[hash];
+};
+
+const getCakeAccentColor = (cake: Cake) => {
+    if (cake.pagada && cake.entregada) return '#2b8a5b';
+    if (cake.pagada) return '#e91e63';
+    if (cake.entregada) return '#1d8f6a';
+    return getColorForClient(cake.cliente);
+};
+
+type TortasNav = import('@react-navigation/native').NavigationProp<RootTabParamList, 'Tortas'>;
+
+const CakesScreen: React.FC = () => {
+    const navigation = useNavigation<TortasNav>();
+    const { cakes, ingredients, updateCakeStatus, updateCakeSaleAmount } = useAppState();
+
+    const today = useMemo(() => new Date(), []);
+    const [visibleMonth, setVisibleMonth] = useState(
+        new Date(today.getFullYear(), today.getMonth(), 1),
+    );
+    const [selectedDate, setSelectedDate] = useState(today.toISOString().slice(0, 10));
+    const [viewMode, setViewMode] = useState<'mes' | 'agenda'>('mes');
+    const [showFilters, setShowFilters] = useState(false);
+    const [searchCliente, setSearchCliente] = useState('');
+    const [filtroForma, setFiltroForma] = useState<'todas' | CakeShape>('todas');
+    const [statusFilter, setStatusFilter] = useState<'todas' | 'pagadas' | 'entregadas' | 'pendientes'>('todas');
+    const [summaryMode, setSummaryMode] = useState<'semana' | 'mes'>('mes');
+    const [selectedCakeId, setSelectedCakeId] = useState<string | null>(null);
+    const [photoZoomed, setPhotoZoomed] = useState(false);
+    const [saleAmountInput, setSaleAmountInput] = useState('');
+    const [isSavingSaleAmount, setIsSavingSaleAmount] = useState(false);
+
+    useLayoutEffect(() => {
+        navigation.setOptions({
+            headerRight: () => (
+                <View style={styles.headerActionsRow}>
+                    <Pressable
+                        onPress={() => setShowFilters((prev) => !prev)}
+                        style={styles.headerIconButton}
+                    >
+                        <Ionicons name="search" size={22} color="#333" />
+                    </Pressable>
+                    <Pressable
+                        onPress={() => navigation.navigate('Ajustes')}
+                        style={styles.headerIconButton}
+                    >
+                        <Ionicons name="settings-outline" size={22} color="#333" />
+                    </Pressable>
+                </View>
+            ),
+        });
+    }, [navigation]);
+
+    const daysInMonth = useMemo(() => {
+        const year = visibleMonth.getFullYear();
+        const month = visibleMonth.getMonth();
+        const date = new Date(year, month, 1);
+        const result: { key: string; label: string; weekday: string }[] = [];
+        while (date.getMonth() === month) {
+            const iso = date.toISOString().slice(0, 10);
+            result.push({
+                key: iso,
+                label: String(date.getDate()),
+                weekday: weekdayShort[date.getDay()],
+            });
+            date.setDate(date.getDate() + 1);
+        }
+        return result;
+    }, [visibleMonth]);
+
+    const filteredCakes = useMemo(
+        () =>
+            cakes.filter((c) => {
+                if (filtroForma !== 'todas' && c.forma !== filtroForma) return false;
+                if (statusFilter === 'pagadas' && !c.pagada) return false;
+                if (statusFilter === 'entregadas' && !c.entregada) return false;
+                if (statusFilter === 'pendientes' && (c.pagada || c.entregada)) return false;
+                if (searchCliente.trim()) {
+                    const q = searchCliente.trim().toLowerCase();
+                    const cliente = (c.cliente || '').toLowerCase();
+                    if (!cliente.includes(q)) return false;
+                }
+                return true;
+            }),
+        [cakes, filtroForma, searchCliente, statusFilter],
+    );
+
+    const cakesBySelectedDate = useMemo(
+        () => filteredCakes.filter((c) => c.fecha === selectedDate),
+        [filteredCakes, selectedDate],
+    );
+
+    const agendaSections = useMemo(() => {
+        const grouped: Record<string, typeof cakes> = {};
+        filteredCakes.forEach((c) => {
+            if (!grouped[c.fecha]) grouped[c.fecha] = [];
+            grouped[c.fecha].push(c);
+        });
+        const dates = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
+        return dates.map((date) => ({ date, items: grouped[date] }));
+    }, [filteredCakes]);
+
+    const selectedCake: Cake | null = useMemo(
+        () => cakes.find((c) => c.id === selectedCakeId) || null,
+        [cakes, selectedCakeId],
+    );
+
+    useEffect(() => {
+        setSaleAmountInput(
+            selectedCake?.montoVenta != null
+                ? selectedCake.montoVenta.toString()
+                : '',
+        );
+    }, [selectedCake?.id, selectedCake?.montoVenta]);
+
+    const selectedCakeLines = useMemo(
+        () => {
+            if (!selectedCake) return [];
+            return selectedCake.ingredientes.map((usage) => {
+                const ing = ingredients.find((x) => x.id === usage.ingredientId);
+                const nombre = ing ? ing.nombre : 'Ingrediente eliminado';
+                const unidad = ing?.unidad;
+                const costoUnidad = ing?.costoPorUnidad ?? 0;
+                const unitPrice =
+                    usage.costoLinea != null && !Number.isNaN(usage.costoLinea)
+                        ? usage.costoLinea
+                        : costoUnidad;
+                const subtotal = unitPrice * usage.cantidad;
+                return {
+                    id: usage.ingredientId,
+                    nombre,
+                    cantidad: usage.cantidad,
+                    unidad,
+                    costoUnitario: unitPrice,
+                    subtotal,
+                };
+            });
+        },
+        [selectedCake, ingredients],
+    );
+
+    const selectedCakeGain = useMemo(() => {
+        if (!selectedCake || selectedCake.montoVenta == null) {
+            return null;
+        }
+
+        return selectedCake.montoVenta - selectedCake.costoTotal;
+    }, [selectedCake]);
+
+    const weekSummary = useMemo(() => {
+        const range = getWeekRange(selectedDate);
+        const periodCakes = filteredCakes.filter(
+            (cake) => cake.fecha >= range.startKey && cake.fecha <= range.endKey,
+        );
+        const cakesWithSale = periodCakes.filter((cake) => cake.pagada && cake.montoVenta != null);
+        const totalGain = cakesWithSale.reduce(
+            (acc, cake) => acc + ((cake.montoVenta ?? 0) - cake.costoTotal),
+            0,
+        );
+
+        return {
+            label: `Semana ${formatShortDate(range.start)} - ${formatShortDate(range.end)}`,
+            totalGain,
+            cakesWithSale: cakesWithSale.length,
+            totalCakes: periodCakes.length,
+        };
+    }, [filteredCakes, selectedDate]);
+
+    const monthSummary = useMemo(() => {
+        const monthKey = `${visibleMonth.getFullYear()}-${String(visibleMonth.getMonth() + 1).padStart(2, '0')}`;
+        const periodCakes = filteredCakes.filter((cake) => cake.fecha.startsWith(monthKey));
+        const cakesWithSale = periodCakes.filter((cake) => cake.pagada && cake.montoVenta != null);
+        const totalGain = cakesWithSale.reduce(
+            (acc, cake) => acc + ((cake.montoVenta ?? 0) - cake.costoTotal),
+            0,
+        );
+
+        return {
+            label: `${monthNames[visibleMonth.getMonth()]} ${visibleMonth.getFullYear()}`,
+            totalGain,
+            cakesWithSale: cakesWithSale.length,
+            totalCakes: periodCakes.length,
+        };
+    }, [filteredCakes, visibleMonth]);
+
+    const activeSummary = summaryMode === 'semana' ? weekSummary : monthSummary;
+
+    // Cambia el mes visible en el calendario (anterior/siguiente).
+    const handleChangeMonth = (delta: number) => {
+        setVisibleMonth((prev) => {
+            const year = prev.getFullYear();
+            const month = prev.getMonth() + delta;
+            return new Date(year, month, 1);
+        });
+    };
+
+    // Cambia el estado pagada/entregada de una torta.
+    const handleToggleCakeStatus = async (
+        cakeId: string,
+        field: 'pagada' | 'entregada',
+        nextValue: boolean,
+    ) => {
+        await updateCakeStatus(cakeId, { [field]: nextValue });
+    };
+
+    // Guarda el monto de venta editado en el detalle de la torta seleccionada.
+    const handleSaveSaleAmount = async () => {
+        if (!selectedCake || isSavingSaleAmount) {
+            return;
+        }
+
+        const rawValue = saleAmountInput.trim().replace(',', '.');
+
+        if (!rawValue) {
+            setIsSavingSaleAmount(true);
+            const synced = await updateCakeSaleAmount(selectedCake.id, undefined);
+            setIsSavingSaleAmount(false);
+
+            if (!synced) {
+                Alert.alert(
+                    'Monto actualizado localmente',
+                    'No se pudo sincronizar con Firebase en este momento.',
+                );
+            }
+            return;
+        }
+
+        const parsedAmount = Number(rawValue);
+        if (Number.isNaN(parsedAmount) || parsedAmount < 0) {
+            Alert.alert('Monto inválido', 'Ingresa un monto de venta válido.');
+            return;
+        }
+
+        setIsSavingSaleAmount(true);
+        const synced = await updateCakeSaleAmount(selectedCake.id, parsedAmount);
+        setIsSavingSaleAmount(false);
+
+        if (!synced) {
+            Alert.alert(
+                'Monto actualizado localmente',
+                'No se pudo sincronizar con Firebase en este momento.',
+            );
+        }
+    };
+
+    // Crea un borrador a partir de una torta existente y navega a "Agregar".
+    const handleDuplicateCake = (cake: Cake) => {
+        const draft: AddCakeDraft = {
+            nombre: cake.nombre,
+            cliente: cake.cliente,
+            fecha: cake.fecha,
+            forma: cake.forma,
+            tamanio: cake.tamanio,
+            notas: cake.notas,
+            fotoUri: cake.fotoUri,
+            montoVenta: cake.montoVenta,
+            ingredientesUsados: cake.ingredientes.map((item) => ({
+                ingredientId: item.ingredientId,
+                cantidad: item.cantidad,
+                costoLinea: item.costoLinea,
+            })),
+        };
+
+        setSelectedCakeId(null);
+        setPhotoZoomed(false);
+        navigation.navigate('Agregar', {
+            duplicateCake: draft,
+            duplicateSourceId: `${cake.id}-${Date.now()}`,
+        });
+    };
+
+    const renderCakeStatusBadges = (cake: Cake) => {
+        if (!cake.pagada && !cake.entregada) {
+            return null;
+        }
+
+        return (
+            <View style={styles.cakeStatusBadgeRow}>
+                {cake.pagada && (
+                    <View style={[styles.cakeStatusBadge, styles.cakeStatusBadgePaid]}>
+                        <Text style={styles.cakeStatusBadgeText}>Pagada</Text>
+                    </View>
+                )}
+                {cake.entregada && (
+                    <View style={[styles.cakeStatusBadge, styles.cakeStatusBadgeDelivered]}>
+                        <Text style={styles.cakeStatusBadgeText}>Entregada</Text>
+                    </View>
+                )}
+            </View>
+        );
+    };
+
+    const monthLabel = `${monthNames[visibleMonth.getMonth()]} ${visibleMonth.getFullYear()}`;
+
+    const renderSelectedCakeLines = () => {
+        if (!selectedCakeLines.length) {
+            return <Text style={styles.detailHintText}>No hay ingredientes detallados.</Text>;
+        }
+
+        return (
+            <View style={styles.detailLinesContainer}>
+                {selectedCakeLines.map((line) => (
+                    <View key={line.id} style={styles.detailLineRow}>
+                        <View style={styles.detailLineInfo}>
+                            <Text style={styles.detailLineText}>{line.nombre}</Text>
+                            <Text style={styles.detailLineMeta}>
+                                {line.cantidad} {line.unidad || 'unidad'}
+                                {` • $${line.costoUnitario.toFixed(2)} c/u`}
+                            </Text>
+                        </View>
+                        <Text style={styles.detailLineCost}>
+                            {`$${line.subtotal.toFixed(2)}`}
+                        </Text>
+                    </View>
+                ))}
+            </View>
+        );
+    };
+
+    return (
+        <View style={styles.container}>
+
+            <View style={styles.viewModeRow}>
+                <Pressable
+                    style={[
+                        styles.viewModeButton,
+                        viewMode === 'mes' && styles.viewModeButtonActive,
+                    ]}
+                    onPress={() => setViewMode('mes')}
+                >
+                    <Text
+                        style={[
+                            styles.viewModeButtonText,
+                            viewMode === 'mes' && styles.viewModeButtonTextActive,
+                        ]}
+                    >
+                        Mes
+                    </Text>
+                </Pressable>
+                <Pressable
+                    style={[
+                        styles.viewModeButton,
+                        viewMode === 'agenda' && styles.viewModeButtonActive,
+                    ]}
+                    onPress={() => setViewMode('agenda')}
+                >
+                    <Text
+                        style={[
+                            styles.viewModeButtonText,
+                            viewMode === 'agenda' && styles.viewModeButtonTextActive,
+                        ]}
+                    >
+                        Agenda
+                    </Text>
+                </Pressable>
+            </View>
+
+            {showFilters && (
+                <View style={styles.filtersContainer}>
+                    <View style={styles.searchBox}>
+                        <Ionicons name="search" size={18} color="#666" style={styles.searchIcon} />
+                        <TextInput
+                            placeholder="Buscar cliente"
+                            placeholderTextColor="#888"
+                            value={searchCliente}
+                            onChangeText={setSearchCliente}
+                            style={styles.filterInput}
+                            selectionColor="#e91e63"
+                            cursorColor="#e91e63"
+                            underlineColorAndroid="transparent"
+                            autoCorrect={false}
+                        />
+                    </View>
+                    <View style={styles.statusFilterRow}>
+                        {[
+                            { label: 'Todas', value: 'todas' },
+                            { label: 'Pagadas', value: 'pagadas' },
+                            { label: 'Entregadas', value: 'entregadas' },
+                            { label: 'Pendientes', value: 'pendientes' },
+                        ].map((option) => (
+                            <Pressable
+                                key={option.value}
+                                onPress={() => setStatusFilter(option.value as typeof statusFilter)}
+                                style={[
+                                    styles.statusFilterButton,
+                                    statusFilter === option.value && styles.statusFilterButtonActive,
+                                ]}
+                            >
+                                <Text
+                                    style={[
+                                        styles.statusFilterButtonText,
+                                        statusFilter === option.value && styles.statusFilterButtonTextActive,
+                                    ]}
+                                >
+                                    {option.label}
+                                </Text>
+                            </Pressable>
+                        ))}
+                    </View>
+                    <View style={styles.shapeRow}>
+                        <Pressable
+                            onPress={() => setFiltroForma('todas')}
+                            style={[
+                                styles.shapeButton,
+                                filtroForma === 'todas' && styles.shapeButtonActive,
+                            ]}
+                        >
+                            <Text
+                                style={[
+                                    styles.shapeButtonText,
+                                    filtroForma === 'todas' && styles.shapeButtonTextActive,
+                                ]}
+                            >
+                                Todas
+                            </Text>
+                        </Pressable>
+                        {shapeOptions.map((opt) => (
+                            <Pressable
+                                key={opt.value}
+                                onPress={() => setFiltroForma(opt.value)}
+                                style={[
+                                    styles.shapeButton,
+                                    filtroForma === opt.value && styles.shapeButtonActive,
+                                ]}
+                            >
+                                <Text
+                                    style={[
+                                        styles.shapeButtonText,
+                                        filtroForma === opt.value && styles.shapeButtonTextActive,
+                                    ]}
+                                >
+                                    {opt.label}
+                                </Text>
+                            </Pressable>
+                        ))}
+                    </View>
+                </View>
+            )}
+
+            <View style={styles.summaryCard}>
+                <View style={styles.summaryHeaderRow}>
+                    <View>
+                        <Text style={styles.summaryTitle}>Ganancia total</Text>
+                        <Text style={styles.summarySubtitle}>{activeSummary.label}</Text>
+                    </View>
+
+                    <View style={styles.summaryToggleRow}>
+                        <Pressable
+                            style={[
+                                styles.summaryToggleButton,
+                                summaryMode === 'semana' && styles.summaryToggleButtonActive,
+                            ]}
+                            onPress={() => setSummaryMode('semana')}
+                        >
+                            <Text
+                                style={[
+                                    styles.summaryToggleButtonText,
+                                    summaryMode === 'semana' && styles.summaryToggleButtonTextActive,
+                                ]}
+                            >
+                                Semana
+                            </Text>
+                        </Pressable>
+                        <Pressable
+                            style={[
+                                styles.summaryToggleButton,
+                                summaryMode === 'mes' && styles.summaryToggleButtonActive,
+                            ]}
+                            onPress={() => setSummaryMode('mes')}
+                        >
+                            <Text
+                                style={[
+                                    styles.summaryToggleButtonText,
+                                    summaryMode === 'mes' && styles.summaryToggleButtonTextActive,
+                                ]}
+                            >
+                                Mes
+                            </Text>
+                        </Pressable>
+                    </View>
+                </View>
+
+                <Text style={styles.summaryAmount}>${activeSummary.totalGain.toFixed(2)}</Text>
+
+            </View>
+
+            {viewMode === 'mes' && (
+                <View style={styles.monthViewContainer}>
+                    <View style={styles.calendarBlock}>
+                        <View style={styles.calendarHeader}>
+                            <Pressable onPress={() => handleChangeMonth(-1)} style={styles.calendarNavButton}>
+                                <Text style={styles.calendarNavText}>{'<'}</Text>
+                            </Pressable>
+                            <Text style={styles.calendarMonth}>{monthLabel}</Text>
+                            <Pressable onPress={() => handleChangeMonth(1)} style={styles.calendarNavButton}>
+                                <Text style={styles.calendarNavText}>{'>'}</Text>
+                            </Pressable>
+                        </View>
+
+                        <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            style={styles.calendarDaysRow}
+                            contentContainerStyle={styles.calendarDaysContent}
+                        >
+                            {daysInMonth.map((d) => {
+                                const isSelected = d.key === selectedDate;
+                                return (
+                                    <Pressable
+                                        key={d.key}
+                                        onPress={() => setSelectedDate(d.key)}
+                                        style={[
+                                            styles.dayChip,
+                                            isSelected && styles.dayChipSelected,
+                                        ]}
+                                    >
+                                        <Text style={styles.dayChipWeek}>{d.weekday}</Text>
+                                        <Text style={styles.dayChipLabel}>{d.label}</Text>
+                                    </Pressable>
+                                );
+                            })}
+                        </ScrollView>
+                    </View>
+
+                    <View style={styles.daySection}>
+                        <Text style={styles.daySectionDate}>{selectedDate}</Text>
+
+                        <ScrollView
+                            style={styles.monthListScroll}
+                            contentContainerStyle={styles.monthListContent}
+                            showsVerticalScrollIndicator={false}
+                            keyboardShouldPersistTaps="handled"
+                        >
+                            {cakesBySelectedDate.length === 0 ? (
+                                <Text style={styles.emptyText}>No hay tortas registradas este día.</Text>
+                            ) : (
+                                cakesBySelectedDate.map((item) => (
+                                    <Pressable
+                                        key={item.id}
+                                        style={styles.cakeRow}
+                                        onPress={() => setSelectedCakeId(item.id)}
+                                    >
+                                        <View
+                                            style={[
+                                                styles.clientDot,
+                                                { backgroundColor: getCakeAccentColor(item) },
+                                            ]}
+                                        />
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={styles.cakeName}>{item.nombre || 'Sin nombre'}</Text>
+                                            <Text style={styles.cakeSubtitle}>
+                                                {item.cliente ? `${item.cliente} • ` : ''}
+                                                {item.forma} {item.tamanio ? `• ${item.tamanio}` : ''}
+                                            </Text>
+                                            {renderCakeStatusBadges(item)}
+                                            {item.montoVenta != null && (
+                                                <Text style={styles.cakeProfitText}>
+                                                    Ganancia: ${(item.montoVenta - item.costoTotal).toFixed(2)}
+                                                </Text>
+                                            )}
+                                        </View>
+                                        <Text style={[
+                                            styles.cakeCost,
+                                            item.pagada && styles.cakeCostPaid,
+                                            item.entregada && !item.pagada && styles.cakeCostDelivered,
+                                        ]}>${item.costoTotal.toFixed(2)}</Text>
+                                    </Pressable>
+                                ))
+                            )}
+                        </ScrollView>
+                    </View>
+                </View>
+            )}
+
+            {viewMode === 'agenda' && (
+                <ScrollView style={{ flex: 1 }}>
+                    {agendaSections.length === 0 ? (
+                        <Text style={styles.emptyText}>No hay tortas registradas.</Text>
+                    ) : (
+                        agendaSections.map((section) => (
+                            <View key={section.date}>
+                                <Text style={styles.sectionTitle}>{section.date}</Text>
+                                {section.items.map((item) => (
+                                    <Pressable
+                                        key={item.id}
+                                        style={styles.cakeRow}
+                                        onPress={() => setSelectedCakeId(item.id)}
+                                    >
+                                        <View
+                                            style={[
+                                                styles.clientDot,
+                                                { backgroundColor: getCakeAccentColor(item) },
+                                            ]}
+                                        />
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={styles.cakeName}>{item.nombre || 'Sin nombre'}</Text>
+                                            <Text style={styles.cakeSubtitle}>
+                                                {item.cliente ? `${item.cliente} • ` : ''}
+                                                {item.forma} {item.tamanio ? `• ${item.tamanio}` : ''}
+                                            </Text>
+                                            {renderCakeStatusBadges(item)}
+                                            {item.montoVenta != null && (
+                                                <Text style={styles.cakeProfitText}>
+                                                    Ganancia: ${(item.montoVenta - item.costoTotal).toFixed(2)}
+                                                </Text>
+                                            )}
+                                        </View>
+                                        <Text style={[
+                                            styles.cakeCost,
+                                            item.pagada && styles.cakeCostPaid,
+                                            item.entregada && !item.pagada && styles.cakeCostDelivered,
+                                        ]}>${item.costoTotal.toFixed(2)}</Text>
+                                    </Pressable>
+                                ))}
+                            </View>
+                        ))
+                    )}
+                </ScrollView>
+            )}
+
+            {selectedCake && (
+                <View style={styles.detailOverlay}>
+                    <View style={styles.detailCard}>
+                        <View style={styles.detailHeaderRow}>
+                            <View>
+                                <Text style={styles.detailDate}>{selectedCake.fecha}</Text>
+                                <Text style={styles.detailClient}>{selectedCake.cliente || 'Sin cliente'}</Text>
+                            </View>
+                            <Pressable onPress={() => setSelectedCakeId(null)}>
+                                <Text style={styles.detailCloseText}>Cerrar</Text>
+                            </Pressable>
+                        </View>
+
+                        <View style={styles.detailTopSection}>
+                            <View style={styles.detailTitleBlock}>
+                                <Text style={styles.detailTitle}>{selectedCake.nombre || 'Torta'}</Text>
+                                <Text style={styles.detailTopMeta}>
+                                    {selectedCakeLines.length} ingrediente{selectedCakeLines.length === 1 ? '' : 's'}
+                                </Text>
+                            </View>
+
+                            {selectedCake.fotoUri ? (
+                                <Pressable onPress={() => setPhotoZoomed(true)} style={styles.detailPhotoCompactWrapper}>
+                                    <Image
+                                        source={{ uri: selectedCake.fotoUri }}
+                                        style={styles.detailPhotoCompact}
+                                        resizeMode="cover"
+                                    />
+                                </Pressable>
+                            ) : null}
+                        </View>
+
+                        <View style={styles.cakeStatusRow}>
+                            <Pressable
+                                style={[
+                                    styles.cakeStatusButton,
+                                    selectedCake.pagada && styles.cakeStatusButtonPaid,
+                                ]}
+                                onPress={() => handleToggleCakeStatus(
+                                    selectedCake.id,
+                                    'pagada',
+                                    !selectedCake.pagada,
+                                )}
+                            >
+                                <Ionicons
+                                    name={selectedCake.pagada ? 'cash' : 'cash-outline'}
+                                    size={16}
+                                    color={selectedCake.pagada ? '#fff' : '#a84a72'}
+                                />
+                                <Text
+                                    style={[
+                                        styles.cakeStatusButtonText,
+                                        selectedCake.pagada && styles.cakeStatusButtonTextActive,
+                                    ]}
+                                >
+                                    {selectedCake.pagada ? 'Pagada' : 'Marcar pagada'}
+                                </Text>
+                            </Pressable>
+
+                            <Pressable
+                                style={[
+                                    styles.cakeStatusButton,
+                                    selectedCake.entregada && styles.cakeStatusButtonDelivered,
+                                ]}
+                                onPress={() => handleToggleCakeStatus(
+                                    selectedCake.id,
+                                    'entregada',
+                                    !selectedCake.entregada,
+                                )}
+                            >
+                                <Ionicons
+                                    name={selectedCake.entregada ? 'checkmark-circle' : 'checkmark-circle-outline'}
+                                    size={16}
+                                    color={selectedCake.entregada ? '#fff' : '#2b8a5b'}
+                                />
+                                <Text
+                                    style={[
+                                        styles.cakeStatusButtonText,
+                                        selectedCake.entregada && styles.cakeStatusButtonTextActive,
+                                    ]}
+                                >
+                                    {selectedCake.entregada ? 'Entregada' : 'Marcar entregada'}
+                                </Text>
+                            </Pressable>
+                        </View>
+
+                        <Pressable
+                            style={styles.duplicateCakeButton}
+                            onPress={() => handleDuplicateCake(selectedCake)}
+                        >
+                            <Ionicons name="copy-outline" size={16} color="#e91e63" />
+                            <Text style={styles.duplicateCakeButtonText}>Duplicar torta</Text>
+                        </Pressable>
+
+
+
+                        <ScrollView
+                            style={styles.detailIngredientsScroll}
+                            contentContainerStyle={styles.detailIngredientsContent}
+                            showsVerticalScrollIndicator={false}
+                            nestedScrollEnabled
+                            keyboardShouldPersistTaps="handled"
+                        >
+                            {renderSelectedCakeLines()}
+                        </ScrollView>
+
+                        <View style={styles.detailFooterPanel}>
+                            <Text style={styles.saleEditorLabel}>Monto de venta</Text>
+                            <View style={styles.saleEditorRow}>
+                                <View style={styles.saleInputWrapper}>
+                                    <Text style={styles.saleCurrencyPrefix}>$</Text>
+                                    <TextInput
+                                        value={saleAmountInput}
+                                        onChangeText={setSaleAmountInput}
+                                        placeholder="0.00"
+                                        placeholderTextColor="#9b7b8d"
+                                        keyboardType="decimal-pad"
+                                        style={styles.saleAmountInput}
+                                        editable={!isSavingSaleAmount}
+                                    />
+                                </View>
+
+                                <Pressable
+                                    style={[
+                                        styles.saleSaveButton,
+                                        isSavingSaleAmount && styles.saleSaveButtonDisabled,
+                                    ]}
+                                    onPress={handleSaveSaleAmount}
+                                    disabled={isSavingSaleAmount}
+                                >
+                                    <Text style={styles.saleSaveButtonText}>
+                                        {isSavingSaleAmount ? 'Guardando...' : 'Guardar'}
+                                    </Text>
+                                </Pressable>
+                            </View>
+
+                            <View style={styles.detailTotalRow}>
+                                <Text style={styles.detailTotalLabel}>COSTO</Text>
+                                <Text style={styles.detailTotalValue}>
+                                    {`$${selectedCake.costoTotal.toFixed(2)}`}
+                                </Text>
+                            </View>
+
+                            {selectedCake.montoVenta != null ? (
+                                <>
+                                    <View style={styles.detailMetricRow}>
+                                        <Text style={styles.detailMetricLabel}>GANANCIA</Text>
+                                        <Text
+                                            style={[
+                                                styles.detailMetricValue,
+                                                styles.detailProfitValue,
+                                                selectedCakeGain != null && selectedCakeGain < 0 && styles.detailLossValue,
+                                            ]}
+                                        >
+                                            {selectedCakeGain != null ? `$${selectedCakeGain.toFixed(2)}` : '$0.00'}
+                                        </Text>
+                                    </View>
+                                </>
+                            ) : (
+                                <Text style={styles.detailHintText}>
+                                    Guarda el monto de venta para ver la ganancia.
+                                </Text>
+                            )}
+                        </View>
+                    </View>
+                </View>
+            )}
+
+            {selectedCake && photoZoomed && selectedCake.fotoUri && (
+                <Pressable
+                    style={styles.detailOverlay}
+                    onPress={() => setPhotoZoomed(false)}
+                >
+                    <Image
+                        source={{ uri: selectedCake.fotoUri }}
+                        style={{ width: '90%', height: '70%', borderRadius: 8 }}
+                        resizeMode="contain"
+                    />
+                </Pressable>
+            )}
+        </View>
+    );
+};
+
+export default CakesScreen;

@@ -4,11 +4,11 @@
     "slug": "TortaCtrl",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/tortaicon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/tortaicon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -17,14 +17,20 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/tortaicon.png",
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.cjcrr.TortaCtrl"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/tortaicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "ac69c8b2-20cb-43c8-97d0-93569c7dd375"
+      }
     }
   }
 }
