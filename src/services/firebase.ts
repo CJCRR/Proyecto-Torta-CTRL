@@ -13,7 +13,7 @@ import {
     serverTimestamp,
 } from 'firebase/firestore';
 import { Cake, Ingredient } from '../types';
-import firebaseConfig from './firebaseConfig.local';
+import firebaseConfig from './firebaseConfig';
 
 let authPromise: Promise<boolean> | null = null;
 

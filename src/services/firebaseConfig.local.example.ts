@@ -4,12 +4,12 @@
 // está en .gitignore, así que no se subirá a GitHub.
 
 const firebaseConfig = {
-  apiKey: 'PON_AQUI_TU_API_KEY',
-  authDomain: 'PON_AQUI_TU_AUTH_DOMAIN',
-  projectId: 'PON_AQUI_TU_PROJECT_ID',
-  storageBucket: 'PON_AQUI_TU_STORAGE_BUCKET',
-  messagingSenderId: 'PON_AQUI_TU_SENDER_ID',
-  appId: 'PON_AQUI_TU_APP_ID',
+  apiKey: 'AIzaSyCQ1gba7_D4oxq8xakV5WnLkLpgq5GR4NY',
+  authDomain: 'tortactrl.firebaseapp.com',
+  projectId: 'tortactrl',
+  storageBucket: 'tortactrl.firebasestorage.app',
+  messagingSenderId: '861443914468',
+  appId: '1:861443914468:web:11dd6d864300cd6ad28af1',
 };
 
 export default firebaseConfig;

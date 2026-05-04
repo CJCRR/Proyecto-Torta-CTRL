@@ -94,6 +94,34 @@ const getCakeAccentColor = (cake: Cake) => {
 
 type TortasNav = import('@react-navigation/native').NavigationProp<RootTabParamList, 'Tortas'>;
 
+type SummaryKBreakdownItem = {
+    ingredientId: string;
+    nombre: string;
+    cantidad: number;
+    unidad?: string;
+    costoUnitario: number;
+    subtotal: number;
+};
+
+type SummaryKBreakdownCake = {
+    cakeId: string;
+    cakeNombre: string;
+    cliente?: string;
+    fecha: string;
+    total: number;
+    items: SummaryKBreakdownItem[];
+};
+
+type SummaryKGroupedItem = {
+    ingredientId: string;
+    nombre: string;
+    unidad?: string;
+    totalCantidad: number;
+    totalSubtotal: number;
+    cakesCount: number;
+    usagesCount: number;
+};
+
 const CakesScreen: React.FC = () => {
     const navigation = useNavigation<TortasNav>();
     const { cakes, ingredients, updateCakeStatus, updateCakeSaleAmount } = useAppState();
@@ -116,6 +144,7 @@ const CakesScreen: React.FC = () => {
     const [showDateToPicker, setShowDateToPicker] = useState(false);
     const [selectedCakeId, setSelectedCakeId] = useState<string | null>(null);
     const [photoZoomed, setPhotoZoomed] = useState(false);
+    const [showKBreakdown, setShowKBreakdown] = useState(false);
     const [saleAmountInput, setSaleAmountInput] = useState('');
     const [isSavingSaleAmount, setIsSavingSaleAmount] = useState(false);
 
@@ -257,21 +286,79 @@ const CakesScreen: React.FC = () => {
     );
 
     const buildSummary = (periodCakes: Cake[], label: string) => {
-        const totalCost = periodCakes.reduce((acc, cake) => acc + cake.costoTotal, 0);
-        const totalSale = periodCakes.reduce((acc, cake) => acc + (cake.montoVenta ?? 0), 0);
-        const totalK = periodCakes.reduce((cakeAcc, cake) => cakeAcc + cake.ingredientes.reduce((usageAcc, usage) => {
-            const ingredient = ingredientMap.get(usage.ingredientId);
+        const kBreakdown = periodCakes.reduce<SummaryKBreakdownCake[]>((acc, cake) => {
+            const items = cake.ingredientes.reduce<SummaryKBreakdownItem[]>((usageAcc, usage) => {
+                const ingredient = ingredientMap.get(usage.ingredientId);
 
-            if (!ingredient?.esMontoK) {
+                if (!ingredient?.esMontoK) {
+                    return usageAcc;
+                }
+
+                const unitPrice = usage.costoLinea != null && !Number.isNaN(usage.costoLinea)
+                    ? usage.costoLinea
+                    : ingredient.costoPorUnidad;
+
+                usageAcc.push({
+                    ingredientId: usage.ingredientId,
+                    nombre: ingredient.nombre,
+                    cantidad: usage.cantidad,
+                    unidad: ingredient.unidad,
+                    costoUnitario: unitPrice,
+                    subtotal: unitPrice * usage.cantidad,
+                });
+
                 return usageAcc;
+            }, []);
+
+            if (!items.length) {
+                return acc;
             }
 
-            const unitPrice = usage.costoLinea != null && !Number.isNaN(usage.costoLinea)
-                ? usage.costoLinea
-                : ingredient.costoPorUnidad;
+            acc.push({
+                cakeId: cake.id,
+                cakeNombre: cake.nombre || 'Torta sin nombre',
+                cliente: cake.cliente,
+                fecha: cake.fecha,
+                total: items.reduce((sum, item) => sum + item.subtotal, 0),
+                items,
+            });
 
-            return usageAcc + (unitPrice * usage.cantidad);
-        }, 0), 0);
+            return acc;
+        }, []);
+
+        const kGroupedMap = new Map<string, SummaryKGroupedItem>();
+
+        kBreakdown.forEach((cake) => {
+            cake.items.forEach((item) => {
+                const existing = kGroupedMap.get(item.ingredientId);
+
+                if (!existing) {
+                    kGroupedMap.set(item.ingredientId, {
+                        ingredientId: item.ingredientId,
+                        nombre: item.nombre,
+                        unidad: item.unidad,
+                        totalCantidad: item.cantidad,
+                        totalSubtotal: item.subtotal,
+                        cakesCount: 0,
+                        usagesCount: 1,
+                    });
+                    return;
+                }
+
+                existing.totalCantidad += item.cantidad;
+                existing.totalSubtotal += item.subtotal;
+                existing.usagesCount += 1;
+            });
+        });
+
+        const kGrouped = Array.from(kGroupedMap.values()).map((grouped) => ({
+            ...grouped,
+            cakesCount: kBreakdown.filter((cake) => cake.items.some((item) => item.ingredientId === grouped.ingredientId)).length,
+        })).sort((a, b) => b.totalSubtotal - a.totalSubtotal);
+
+        const totalCost = periodCakes.reduce((acc, cake) => acc + cake.costoTotal, 0);
+        const totalSale = periodCakes.reduce((acc, cake) => acc + (cake.montoVenta ?? 0), 0);
+        const totalK = kBreakdown.reduce((acc, cake) => acc + cake.total, 0);
 
         return {
             label,
@@ -279,6 +366,8 @@ const CakesScreen: React.FC = () => {
             totalSale,
             totalGain: totalSale - totalCost,
             totalK,
+            kBreakdown,
+            kGrouped,
             totalCakes: periodCakes.length,
         };
     };
@@ -470,6 +559,64 @@ const CakesScreen: React.FC = () => {
                 ))}
             </View>
         );
+    };
+
+    const renderKBreakdown = () => {
+        if (!activeSummary.kBreakdown.length) {
+            return <Text style={styles.kBreakdownEmptyText}>No hay conceptos K en este resumen.</Text>;
+        }
+
+        return activeSummary.kBreakdown.map((cake) => (
+            <View key={cake.cakeId} style={styles.kBreakdownCakeCard}>
+                <View style={styles.kBreakdownCakeHeader}>
+                    <View style={styles.kBreakdownCakeInfo}>
+                        <Text style={styles.kBreakdownCakeTitle}>{cake.cakeNombre}</Text>
+                        <Text style={styles.kBreakdownCakeMeta}>
+                            {cake.fecha}
+                            {cake.cliente ? ` • ${cake.cliente}` : ''}
+                        </Text>
+                    </View>
+                    <Text style={styles.kBreakdownCakeTotal}>${cake.total.toFixed(2)}</Text>
+                </View>
+
+                <View style={styles.kBreakdownItemsList}>
+                    {cake.items.map((item) => (
+                        <View key={`${cake.cakeId}-${item.ingredientId}`} style={styles.kBreakdownItemRow}>
+                            <View style={styles.kBreakdownItemInfo}>
+                                <Text style={styles.kBreakdownItemName}>{item.nombre}</Text>
+                                <Text style={styles.kBreakdownItemMeta}>
+                                    {item.cantidad} {item.unidad || 'unidad'}
+                                    {` • $${item.costoUnitario.toFixed(2)} c/u`}
+                                </Text>
+                            </View>
+                            <Text style={styles.kBreakdownItemTotal}>${item.subtotal.toFixed(2)}</Text>
+                        </View>
+                    ))}
+                </View>
+            </View>
+        ));
+    };
+
+    const renderKGroupedSummary = () => {
+        if (!activeSummary.kGrouped.length) {
+            return null;
+        }
+
+        return activeSummary.kGrouped.map((item) => (
+            <View key={item.ingredientId} style={styles.kGroupedItemCard}>
+                <View style={styles.kGroupedItemHeader}>
+                    <View style={styles.kGroupedItemInfo}>
+                        <Text style={styles.kGroupedItemTitle}>{item.nombre}</Text>
+                        <Text style={styles.kGroupedItemMeta}>
+                            {item.totalCantidad} {item.unidad || 'unidad'}
+                            {` • ${item.cakesCount} torta(s)`}
+                            {` • ${item.usagesCount} registro(s)`}
+                        </Text>
+                    </View>
+                    <Text style={styles.kGroupedItemTotal}>${item.totalSubtotal.toFixed(2)}</Text>
+                </View>
+            </View>
+        ));
     };
 
     return (
@@ -746,10 +893,21 @@ const CakesScreen: React.FC = () => {
                                 <Text style={styles.summaryMetricLabel}>Ganancia total</Text>
                                 <Text style={styles.summaryMetricValue}>${activeSummary.totalGain.toFixed(2)}</Text>
                             </View>
-                            <View style={styles.summaryMetricCard}>
+                            <Pressable
+                                style={[
+                                    styles.summaryMetricCard,
+                                    styles.summaryMetricCardInteractive,
+                                    activeSummary.totalK <= 0 && styles.summaryMetricCardDisabled,
+                                ]}
+                                onPress={() => activeSummary.totalK > 0 && setShowKBreakdown(true)}
+                                disabled={activeSummary.totalK <= 0}
+                            >
                                 <Text style={styles.summaryMetricLabel}>Monto K</Text>
                                 <Text style={[styles.summaryMetricValue, styles.summaryMetricAccent]}>${activeSummary.totalK.toFixed(2)}</Text>
-                            </View>
+                                <Text style={styles.summaryMetricHint}>
+                                    {activeSummary.totalK > 0 ? 'Tocar para ver detalle' : 'Sin conceptos K'}
+                                </Text>
+                            </Pressable>
                         </View>
                         <View style={styles.summaryFooterRow}>
                             <Text style={styles.summaryMeta}>{activeSummary.totalCakes} torta(s) dentro del resumen.</Text>
@@ -924,6 +1082,47 @@ const CakesScreen: React.FC = () => {
                     display="default"
                     onChange={handleRangeDateChange('to')}
                 />
+            )}
+
+            {showKBreakdown && (
+                <View style={styles.detailOverlay}>
+                    <View style={styles.kBreakdownModalCard}>
+                        <View style={styles.kBreakdownModalHeader}>
+                            <View>
+                                <Text style={styles.kBreakdownModalTitle}>Desglose monto K</Text>
+                                <Text style={styles.kBreakdownModalSubtitle}>{activeSummary.label}</Text>
+                            </View>
+                            <Pressable onPress={() => setShowKBreakdown(false)}>
+                                <Text style={styles.detailCloseText}>Cerrar</Text>
+                            </Pressable>
+                        </View>
+
+                        <View style={styles.kBreakdownTotalBox}>
+                            <Text style={styles.kBreakdownTotalLabel}>Total a pagar al ayudante</Text>
+                            <Text style={styles.kBreakdownTotalValue}>${activeSummary.totalK.toFixed(2)}</Text>
+                        </View>
+
+                        <ScrollView
+                            style={styles.kBreakdownScroll}
+                            contentContainerStyle={styles.kBreakdownScrollContent}
+                            showsVerticalScrollIndicator={false}
+                        >
+                            <View style={styles.kBreakdownSection}>
+                                <Text style={styles.kBreakdownSectionTitle}>Resumen por concepto</Text>
+
+                                <View style={styles.kGroupedList}>
+                                    {renderKGroupedSummary()}
+                                </View>
+                            </View>
+
+                            <View style={styles.kBreakdownSection}>
+                                <Text style={styles.kBreakdownSectionTitle}>Detalle por torta</Text>
+
+                            </View>
+                            {renderKBreakdown()}
+                        </ScrollView>
+                    </View>
+                </View>
             )}
 
             {selectedCake && (

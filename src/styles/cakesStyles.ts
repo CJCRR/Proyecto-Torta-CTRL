@@ -556,6 +556,13 @@ export const cakesStyles = StyleSheet.create({
         borderRadius: 14,
         backgroundColor: '#fff8fb',
     },
+    summaryMetricCardInteractive: {
+        borderWidth: 1,
+        borderColor: '#f0c9dc',
+    },
+    summaryMetricCardDisabled: {
+        opacity: 0.72,
+    },
     summaryMetricLabel: {
         fontSize: 11,
         fontWeight: '700',
@@ -569,6 +576,12 @@ export const cakesStyles = StyleSheet.create({
     },
     summaryMetricAccent: {
         color: '#b23c6b',
+    },
+    summaryMetricHint: {
+        marginTop: 6,
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#a54d75',
     },
     summaryFooterRow: {
         marginTop: 1,
@@ -594,6 +607,179 @@ export const cakesStyles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: '#fff3f8',
+    },
+    kBreakdownModalCard: {
+        width: '100%',
+        height: '84%',
+        minHeight: 420,
+        backgroundColor: '#fff',
+        borderRadius: 20,
+        paddingHorizontal: 14,
+        paddingTop: 12,
+        paddingBottom: 12,
+        borderWidth: 1,
+        borderColor: '#f0d7eb',
+        shadowColor: '#000',
+        shadowOpacity: 0.08,
+        shadowOffset: { width: 0, height: 6 },
+        shadowRadius: 14,
+        elevation: 4,
+    },
+    kBreakdownModalHeader: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        gap: 12,
+        marginBottom: 10,
+    },
+    kBreakdownModalTitle: {
+        fontSize: 17,
+        fontWeight: '800',
+        color: '#3b2330',
+    },
+    kBreakdownModalSubtitle: {
+        marginTop: 2,
+        fontSize: 12,
+        color: '#8a6a7c',
+    },
+    kBreakdownTotalBox: {
+        marginBottom: 10,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        borderRadius: 14,
+        backgroundColor: '#fff4f9',
+    },
+    kBreakdownTotalLabel: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#8d5a75',
+    },
+    kBreakdownTotalValue: {
+        marginTop: 4,
+        fontSize: 22,
+        fontWeight: '800',
+        color: '#b23c6b',
+    },
+    kBreakdownScroll: {
+        flex: 1,
+        minHeight: 0,
+    },
+    kBreakdownScrollContent: {
+        paddingBottom: 6,
+        flexGrow: 1,
+    },
+    kBreakdownEmptyText: {
+        fontSize: 13,
+        color: '#78606f',
+    },
+    kBreakdownSection: {
+        marginBottom: 10,
+    },
+    kBreakdownSectionTitle: {
+        fontSize: 14,
+        fontWeight: '800',
+        color: '#3b2330',
+    },
+    kBreakdownSectionHint: {
+        marginTop: 3,
+        fontSize: 12,
+        color: '#866b7a',
+    },
+    kGroupedList: {
+        marginTop: 8,
+        gap: 8,
+    },
+    kGroupedItemCard: {
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        borderRadius: 14,
+        backgroundColor: '#fff4f9',
+        borderWidth: 1,
+        borderColor: '#f1d6e5',
+    },
+    kGroupedItemHeader: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        gap: 12,
+    },
+    kGroupedItemInfo: {
+        flex: 1,
+    },
+    kGroupedItemTitle: {
+        fontSize: 13,
+        fontWeight: '800',
+        color: '#40303f',
+    },
+    kGroupedItemMeta: {
+        marginTop: 2,
+        fontSize: 11,
+        color: '#836776',
+    },
+    kGroupedItemTotal: {
+        fontSize: 14,
+        fontWeight: '800',
+        color: '#b23c6b',
+    },
+    kBreakdownCakeCard: {
+        marginBottom: 10,
+        padding: 12,
+        borderRadius: 16,
+        backgroundColor: '#fff9fc',
+        borderWidth: 1,
+        borderColor: '#f3dceb',
+    },
+    kBreakdownCakeHeader: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        gap: 12,
+        marginBottom: 8,
+    },
+    kBreakdownCakeInfo: {
+        flex: 1,
+    },
+    kBreakdownCakeTitle: {
+        fontSize: 14,
+        fontWeight: '800',
+        color: '#2f2430',
+    },
+    kBreakdownCakeMeta: {
+        marginTop: 2,
+        fontSize: 12,
+        color: '#8a6a7c',
+    },
+    kBreakdownCakeTotal: {
+        fontSize: 15,
+        fontWeight: '800',
+        color: '#b23c6b',
+    },
+    kBreakdownItemsList: {
+        gap: 7,
+    },
+    kBreakdownItemRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        gap: 10,
+    },
+    kBreakdownItemInfo: {
+        flex: 1,
+    },
+    kBreakdownItemName: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: '#423242',
+    },
+    kBreakdownItemMeta: {
+        marginTop: 2,
+        fontSize: 11,
+        color: '#7f6874',
+    },
+    kBreakdownItemTotal: {
+        fontSize: 13,
+        fontWeight: '800',
+        color: '#2f2430',
     },
     monthContent: {
         paddingBottom: 24,
