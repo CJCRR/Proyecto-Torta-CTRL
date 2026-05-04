@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -8,20 +8,50 @@ import {
   Pressable,
   Alert,
   Keyboard,
+  Switch,
   TouchableWithoutFeedback,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppState } from '../store/AppState';
 import { Ingredient } from '../types';
+import type { RootTabParamList } from '../../App';
 import { ingredientsStyles as styles } from '../styles/ingredientsStyles';
 
+type IngredientsNav = import('@react-navigation/native').NavigationProp<RootTabParamList, 'Ingredientes'>;
+
 const IngredientsScreen: React.FC = () => {
+  const navigation = useNavigation<IngredientsNav>();
   const { ingredients, addIngredient, updateIngredient, deleteIngredient } = useAppState();
 
   const [nombre, setNombre] = useState('');
   const [unidad, setUnidad] = useState('unidad');
   const [costo, setCosto] = useState('');
+  const [esMontoK, setEsMontoK] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchIngredient, setSearchIngredient] = useState('');
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <View style={styles.headerActionsRow}>
+          <Pressable
+            onPress={() => setShowSearch((prev) => !prev)}
+            style={styles.headerIconButton}
+          >
+            <Ionicons name="search" size={22} color="#333" />
+          </Pressable>
+          <Pressable
+            onPress={() => navigation.navigate('Ajustes')}
+            style={styles.headerIconButton}
+          >
+            <Ionicons name="settings-outline" size={22} color="#333" />
+          </Pressable>
+        </View>
+      ),
+    });
+  }, [navigation]);
 
   // Crea o actualiza un ingrediente según si hay uno seleccionado.
   const handleSubmit = () => {
@@ -34,6 +64,7 @@ const IngredientsScreen: React.FC = () => {
       nombre: nombre.trim(),
       unidad: unidad.trim() || 'unidad',
       costoPorUnidad: costoNumber,
+      esMontoK,
     };
 
     if (editingId) {
@@ -45,6 +76,7 @@ const IngredientsScreen: React.FC = () => {
     setNombre('');
     setCosto('');
     setUnidad('unidad');
+    setEsMontoK(false);
     setEditingId(null);
   };
 
@@ -53,6 +85,7 @@ const IngredientsScreen: React.FC = () => {
     setNombre(item.nombre);
     setUnidad(item.unidad);
     setCosto(String(item.costoPorUnidad));
+    setEsMontoK(Boolean(item.esMontoK));
     setEditingId(item.id);
   };
 
@@ -78,16 +111,30 @@ const IngredientsScreen: React.FC = () => {
             setNombre('');
             setUnidad('unidad');
             setCosto('');
+            setEsMontoK(false);
           }
         },
       },
     ]);
   };
 
+  const filteredIngredients = useMemo(() => {
+    const query = searchIngredient.trim().toLowerCase();
+
+    if (!query) {
+      return ingredients;
+    }
+
+    return ingredients.filter((item) => item.nombre.toLowerCase().includes(query));
+  }, [ingredients, searchIngredient]);
+
   const renderItem: ListRenderItem<Ingredient> = ({ item }) => (
     <View style={styles.itemRow}>
       <Pressable style={{ flex: 1 }} onPress={() => handleSelect(item)}>
-        <Text style={styles.itemName}>{item.nombre}</Text>
+        <View style={styles.itemNameRow}>
+          <Text style={styles.itemName}>{item.nombre}</Text>
+          {item.esMontoK ? <Text style={styles.kBadge}>K</Text> : null}
+        </View>
         <Text style={styles.itemSubtitle}>
           {item.costoPorUnidad} por {item.unidad}
         </Text>
@@ -125,6 +172,18 @@ const IngredientsScreen: React.FC = () => {
             placeholderTextColor="#b5a0c5"
             style={styles.input}
           />
+          <View style={styles.kSwitchRow}>
+            <View style={styles.kSwitchTextBlock}>
+              <Text style={styles.kSwitchLabel}>Monto K</Text>
+              <Text style={styles.kSwitchHint}>Marca este ingrediente si se le paga al ayudante.</Text>
+            </View>
+            <Switch
+              value={esMontoK}
+              onValueChange={setEsMontoK}
+              trackColor={{ false: '#ead4e0', true: '#f7a7c7' }}
+              thumbColor={esMontoK ? '#e91e63' : '#f4f4f4'}
+            />
+          </View>
           <Pressable
             style={[styles.submitButton, editingId && styles.submitButtonEditing]}
             onPress={handleSubmit}
@@ -141,12 +200,32 @@ const IngredientsScreen: React.FC = () => {
         </View>
 
         <Text style={styles.sectionTitle}>Lista de ingredientes</Text>
+        {showSearch ? (
+          <View style={styles.searchBox}>
+            <Ionicons name="search" size={18} color="#666" style={styles.searchIcon} />
+            <TextInput
+              placeholder="Buscar ingrediente"
+              placeholderTextColor="#888"
+              value={searchIngredient}
+              onChangeText={setSearchIngredient}
+              style={styles.filterInput}
+              selectionColor="#e91e63"
+              cursorColor="#e91e63"
+              underlineColorAndroid="transparent"
+              autoCorrect={false}
+            />
+          </View>
+        ) : null}
         <FlatList
-          data={ingredients}
+          data={filteredIngredients}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           ListEmptyComponent={
-            <Text style={styles.emptyText}>Todavía no agregaste ingredientes.</Text>
+            <Text style={styles.emptyText}>
+              {ingredients.length === 0
+                ? 'Todavía no agregaste ingredientes.'
+                : 'No hay ingredientes que coincidan con la búsqueda.'}
+            </Text>
           }
         />
       </View>

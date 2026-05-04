@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useAppState } from '../store/AppState';
 import { AddCakeDraft, Cake, CakeShape } from '../types';
 import type { RootTabParamList } from '../../App';
@@ -45,6 +46,11 @@ const formatDateKey = (date: Date) => {
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+};
+
+const formatDisplayDate = (dateKey: string) => {
+    const [year, month, day] = dateKey.split('-');
+    return `${day}-${month}-${year}`;
 };
 
 const parseDateKey = (dateKey: string) => {
@@ -103,6 +109,11 @@ const CakesScreen: React.FC = () => {
     const [filtroForma, setFiltroForma] = useState<'todas' | CakeShape>('todas');
     const [statusFilter, setStatusFilter] = useState<'todas' | 'pagadas' | 'entregadas' | 'pendientes'>('todas');
     const [summaryMode, setSummaryMode] = useState<'semana' | 'mes'>('mes');
+    const [summaryHidden, setSummaryHidden] = useState(false);
+    const [dateFrom, setDateFrom] = useState('');
+    const [dateTo, setDateTo] = useState('');
+    const [showDateFromPicker, setShowDateFromPicker] = useState(false);
+    const [showDateToPicker, setShowDateToPicker] = useState(false);
     const [selectedCakeId, setSelectedCakeId] = useState<string | null>(null);
     const [photoZoomed, setPhotoZoomed] = useState(false);
     const [saleAmountInput, setSaleAmountInput] = useState('');
@@ -128,6 +139,19 @@ const CakesScreen: React.FC = () => {
             ),
         });
     }, [navigation]);
+
+    const normalizedDateRange = useMemo(() => {
+        const start = dateFrom || null;
+        const end = dateTo || null;
+
+        if (start && end && start > end) {
+            return { start: end, end: start };
+        }
+
+        return { start, end };
+    }, [dateFrom, dateTo]);
+
+    const hasDateRangeFilter = Boolean(normalizedDateRange.start || normalizedDateRange.end);
 
     const daysInMonth = useMemo(() => {
         const year = visibleMonth.getFullYear();
@@ -158,9 +182,11 @@ const CakesScreen: React.FC = () => {
                     const cliente = (c.cliente || '').toLowerCase();
                     if (!cliente.includes(q)) return false;
                 }
+                if (normalizedDateRange.start && c.fecha < normalizedDateRange.start) return false;
+                if (normalizedDateRange.end && c.fecha > normalizedDateRange.end) return false;
                 return true;
             }),
-        [cakes, filtroForma, searchCliente, statusFilter],
+        [cakes, filtroForma, normalizedDateRange.end, normalizedDateRange.start, searchCliente, statusFilter],
     );
 
     const cakesBySelectedDate = useMemo(
@@ -225,43 +251,69 @@ const CakesScreen: React.FC = () => {
         return selectedCake.montoVenta - selectedCake.costoTotal;
     }, [selectedCake]);
 
+    const ingredientMap = useMemo(
+        () => new Map(ingredients.map((ingredient) => [ingredient.id, ingredient])),
+        [ingredients],
+    );
+
+    const buildSummary = (periodCakes: Cake[], label: string) => {
+        const totalCost = periodCakes.reduce((acc, cake) => acc + cake.costoTotal, 0);
+        const totalSale = periodCakes.reduce((acc, cake) => acc + (cake.montoVenta ?? 0), 0);
+        const totalK = periodCakes.reduce((cakeAcc, cake) => cakeAcc + cake.ingredientes.reduce((usageAcc, usage) => {
+            const ingredient = ingredientMap.get(usage.ingredientId);
+
+            if (!ingredient?.esMontoK) {
+                return usageAcc;
+            }
+
+            const unitPrice = usage.costoLinea != null && !Number.isNaN(usage.costoLinea)
+                ? usage.costoLinea
+                : ingredient.costoPorUnidad;
+
+            return usageAcc + (unitPrice * usage.cantidad);
+        }, 0), 0);
+
+        return {
+            label,
+            totalCost,
+            totalSale,
+            totalGain: totalSale - totalCost,
+            totalK,
+            totalCakes: periodCakes.length,
+        };
+    };
+
     const weekSummary = useMemo(() => {
         const range = getWeekRange(selectedDate);
         const periodCakes = filteredCakes.filter(
             (cake) => cake.fecha >= range.startKey && cake.fecha <= range.endKey,
         );
-        const cakesWithSale = periodCakes.filter((cake) => cake.pagada && cake.montoVenta != null);
-        const totalGain = cakesWithSale.reduce(
-            (acc, cake) => acc + ((cake.montoVenta ?? 0) - cake.costoTotal),
-            0,
-        );
-
-        return {
-            label: `Semana ${formatShortDate(range.start)} - ${formatShortDate(range.end)}`,
-            totalGain,
-            cakesWithSale: cakesWithSale.length,
-            totalCakes: periodCakes.length,
-        };
-    }, [filteredCakes, selectedDate]);
+        return buildSummary(periodCakes, `Semana ${formatShortDate(range.start)} - ${formatShortDate(range.end)}`);
+    }, [filteredCakes, ingredientMap, selectedDate]);
 
     const monthSummary = useMemo(() => {
         const monthKey = `${visibleMonth.getFullYear()}-${String(visibleMonth.getMonth() + 1).padStart(2, '0')}`;
         const periodCakes = filteredCakes.filter((cake) => cake.fecha.startsWith(monthKey));
-        const cakesWithSale = periodCakes.filter((cake) => cake.pagada && cake.montoVenta != null);
-        const totalGain = cakesWithSale.reduce(
-            (acc, cake) => acc + ((cake.montoVenta ?? 0) - cake.costoTotal),
-            0,
-        );
+        return buildSummary(periodCakes, `${monthNames[visibleMonth.getMonth()]} ${visibleMonth.getFullYear()}`);
+    }, [filteredCakes, ingredientMap, visibleMonth]);
 
-        return {
-            label: `${monthNames[visibleMonth.getMonth()]} ${visibleMonth.getFullYear()}`,
-            totalGain,
-            cakesWithSale: cakesWithSale.length,
-            totalCakes: periodCakes.length,
-        };
-    }, [filteredCakes, visibleMonth]);
+    const rangeSummary = useMemo(() => {
+        let label = 'Rango filtrado';
 
-    const activeSummary = summaryMode === 'semana' ? weekSummary : monthSummary;
+        if (normalizedDateRange.start && normalizedDateRange.end) {
+            label = `${formatDisplayDate(normalizedDateRange.start)} - ${formatDisplayDate(normalizedDateRange.end)}`;
+        } else if (normalizedDateRange.start) {
+            label = `Desde ${formatDisplayDate(normalizedDateRange.start)}`;
+        } else if (normalizedDateRange.end) {
+            label = `Hasta ${formatDisplayDate(normalizedDateRange.end)}`;
+        }
+
+        return buildSummary(filteredCakes, label);
+    }, [filteredCakes, ingredientMap, normalizedDateRange.end, normalizedDateRange.start]);
+
+    const activeSummary = hasDateRangeFilter
+        ? rangeSummary
+        : (summaryMode === 'semana' ? weekSummary : monthSummary);
 
     // Cambia el mes visible en el calendario (anterior/siguiente).
     const handleChangeMonth = (delta: number) => {
@@ -345,6 +397,31 @@ const CakesScreen: React.FC = () => {
             duplicateCake: draft,
             duplicateSourceId: `${cake.id}-${Date.now()}`,
         });
+    };
+
+    // Guarda una fecha seleccionada en el rango del filtro.
+    const handleRangeDateChange = (field: 'from' | 'to') => (
+        event: DateTimePickerEvent,
+        selectedDate?: Date,
+    ) => {
+        if (field === 'from') {
+            setShowDateFromPicker(false);
+        } else {
+            setShowDateToPicker(false);
+        }
+
+        if (event.type !== 'set' || !selectedDate) {
+            return;
+        }
+
+        const nextValue = formatDateKey(selectedDate);
+
+        if (field === 'from') {
+            setDateFrom(nextValue);
+            return;
+        }
+
+        setDateTo(nextValue);
     };
 
     const renderCakeStatusBadges = (cake: Cake) => {
@@ -434,83 +511,171 @@ const CakesScreen: React.FC = () => {
             </View>
 
             {showFilters && (
-                <View style={styles.filtersContainer}>
-                    <View style={styles.searchBox}>
-                        <Ionicons name="search" size={18} color="#666" style={styles.searchIcon} />
-                        <TextInput
-                            placeholder="Buscar cliente"
-                            placeholderTextColor="#888"
-                            value={searchCliente}
-                            onChangeText={setSearchCliente}
-                            style={styles.filterInput}
-                            selectionColor="#e91e63"
-                            cursorColor="#e91e63"
-                            underlineColorAndroid="transparent"
-                            autoCorrect={false}
-                        />
-                    </View>
-                    <View style={styles.statusFilterRow}>
-                        {[
-                            { label: 'Todas', value: 'todas' },
-                            { label: 'Pagadas', value: 'pagadas' },
-                            { label: 'Entregadas', value: 'entregadas' },
-                            { label: 'Pendientes', value: 'pendientes' },
-                        ].map((option) => (
+                <View style={styles.filtersOverlay}>
+                    <Pressable
+                        style={styles.filtersBackdrop}
+                        onPress={() => setShowFilters(false)}
+                    />
+
+                    <View style={styles.filtersCard}>
+                        <View style={styles.filtersHeaderRow}>
+                            <View>
+                                <Text style={styles.filtersTitle}>Filtros</Text>
+                                <Text style={styles.filtersSubtitle}>Busca, filtra por fecha, estado y forma</Text>
+                            </View>
+
                             <Pressable
-                                key={option.value}
-                                onPress={() => setStatusFilter(option.value as typeof statusFilter)}
-                                style={[
-                                    styles.statusFilterButton,
-                                    statusFilter === option.value && styles.statusFilterButtonActive,
-                                ]}
+                                style={styles.filtersCloseButton}
+                                onPress={() => setShowFilters(false)}
                             >
-                                <Text
+                                <Ionicons name="close" size={18} color="#a54d75" />
+                            </Pressable>
+                        </View>
+
+                        <View style={styles.filtersSection}>
+                            <Text style={styles.filtersSectionLabel}>Cliente</Text>
+                            <View style={styles.searchBox}>
+                                <Ionicons name="search" size={18} color="#666" style={styles.searchIcon} />
+                                <TextInput
+                                    placeholder="Buscar cliente"
+                                    placeholderTextColor="#888"
+                                    value={searchCliente}
+                                    onChangeText={setSearchCliente}
+                                    style={styles.filterInput}
+                                    selectionColor="#e91e63"
+                                    cursorColor="#e91e63"
+                                    underlineColorAndroid="transparent"
+                                    autoCorrect={false}
+                                />
+                            </View>
+                        </View>
+
+                        <View style={styles.filtersSection}>
+                            <Text style={styles.filtersSectionLabel}>Rango de fechas</Text>
+                            <View style={styles.filterRow}>
+                                <Pressable
+                                    style={styles.dateRangeButton}
+                                    onPress={() => setShowDateFromPicker(true)}
+                                >
+                                    <Ionicons name="calendar-outline" size={16} color="#a54d75" />
+                                    <Text
+                                        style={[
+                                            styles.dateRangeButtonText,
+                                            !dateFrom && styles.dateRangeButtonPlaceholder,
+                                        ]}
+                                    >
+                                        {dateFrom ? formatDisplayDate(dateFrom) : 'Desde'}
+                                    </Text>
+                                </Pressable>
+                                <Pressable
+                                    style={styles.dateRangeButton}
+                                    onPress={() => setShowDateToPicker(true)}
+                                >
+                                    <Ionicons name="calendar-outline" size={16} color="#a54d75" />
+                                    <Text
+                                        style={[
+                                            styles.dateRangeButtonText,
+                                            !dateTo && styles.dateRangeButtonPlaceholder,
+                                        ]}
+                                    >
+                                        {dateTo ? formatDisplayDate(dateTo) : 'Hasta'}
+                                    </Text>
+                                </Pressable>
+                            </View>
+                        </View>
+
+                        <View style={styles.filtersSection}>
+                            <Text style={styles.filtersSectionLabel}>Estado</Text>
+                            <View style={styles.statusFilterRow}>
+                                {[
+                                    { label: 'Todas', value: 'todas' },
+                                    { label: 'Pagadas', value: 'pagadas' },
+                                    { label: 'Entregadas', value: 'entregadas' },
+                                    { label: 'Pendientes', value: 'pendientes' },
+                                ].map((option) => (
+                                    <Pressable
+                                        key={option.value}
+                                        onPress={() => setStatusFilter(option.value as typeof statusFilter)}
+                                        style={[
+                                            styles.statusFilterButton,
+                                            statusFilter === option.value && styles.statusFilterButtonActive,
+                                        ]}
+                                    >
+                                        <Text
+                                            style={[
+                                                styles.statusFilterButtonText,
+                                                statusFilter === option.value && styles.statusFilterButtonTextActive,
+                                            ]}
+                                        >
+                                            {option.label}
+                                        </Text>
+                                    </Pressable>
+                                ))}
+                            </View>
+                        </View>
+
+                        <View style={styles.filtersSection}>
+                            <Text style={styles.filtersSectionLabel}>Forma</Text>
+                            <View style={styles.shapeFilterGrid}>
+                                <Pressable
+                                    onPress={() => setFiltroForma('todas')}
                                     style={[
-                                        styles.statusFilterButtonText,
-                                        statusFilter === option.value && styles.statusFilterButtonTextActive,
+                                        styles.shapeFilterButton,
+                                        filtroForma === 'todas' && styles.shapeButtonActive,
                                     ]}
                                 >
-                                    {option.label}
-                                </Text>
-                            </Pressable>
-                        ))}
-                    </View>
-                    <View style={styles.shapeRow}>
-                        <Pressable
-                            onPress={() => setFiltroForma('todas')}
-                            style={[
-                                styles.shapeButton,
-                                filtroForma === 'todas' && styles.shapeButtonActive,
-                            ]}
-                        >
-                            <Text
-                                style={[
-                                    styles.shapeButtonText,
-                                    filtroForma === 'todas' && styles.shapeButtonTextActive,
-                                ]}
-                            >
-                                Todas
-                            </Text>
-                        </Pressable>
-                        {shapeOptions.map((opt) => (
+                                    <Text
+                                        style={[
+                                            styles.shapeButtonText,
+                                            filtroForma === 'todas' && styles.shapeButtonTextActive,
+                                        ]}
+                                    >
+                                        Todas
+                                    </Text>
+                                </Pressable>
+                                {shapeOptions.map((opt) => (
+                                    <Pressable
+                                        key={opt.value}
+                                        onPress={() => setFiltroForma(opt.value)}
+                                        style={[
+                                            styles.shapeFilterButton,
+                                            filtroForma === opt.value && styles.shapeButtonActive,
+                                        ]}
+                                    >
+                                        <Text
+                                            style={[
+                                                styles.shapeButtonText,
+                                                filtroForma === opt.value && styles.shapeButtonTextActive,
+                                            ]}
+                                        >
+                                            {opt.label}
+                                        </Text>
+                                    </Pressable>
+                                ))}
+                            </View>
+                        </View>
+
+                        <View style={styles.filtersActionsRow}>
                             <Pressable
-                                key={opt.value}
-                                onPress={() => setFiltroForma(opt.value)}
-                                style={[
-                                    styles.shapeButton,
-                                    filtroForma === opt.value && styles.shapeButtonActive,
-                                ]}
+                                style={styles.filtersResetButton}
+                                onPress={() => {
+                                    setSearchCliente('');
+                                    setDateFrom('');
+                                    setDateTo('');
+                                    setStatusFilter('todas');
+                                    setFiltroForma('todas');
+                                }}
                             >
-                                <Text
-                                    style={[
-                                        styles.shapeButtonText,
-                                        filtroForma === opt.value && styles.shapeButtonTextActive,
-                                    ]}
-                                >
-                                    {opt.label}
-                                </Text>
+                                <Text style={styles.filtersResetButtonText}>Limpiar</Text>
                             </Pressable>
-                        ))}
+
+                            <Pressable
+                                style={styles.filtersApplyButton}
+                                onPress={() => setShowFilters(false)}
+                            >
+                                <Text style={styles.filtersApplyButtonText}>Listo</Text>
+                            </Pressable>
+                        </View>
                     </View>
                 </View>
             )}
@@ -518,47 +683,94 @@ const CakesScreen: React.FC = () => {
             <View style={styles.summaryCard}>
                 <View style={styles.summaryHeaderRow}>
                     <View>
-                        <Text style={styles.summaryTitle}>Ganancia total</Text>
+                        <Text style={styles.summaryTitle}>Resumen total</Text>
                         <Text style={styles.summarySubtitle}>{activeSummary.label}</Text>
                     </View>
 
-                    <View style={styles.summaryToggleRow}>
-                        <Pressable
-                            style={[
-                                styles.summaryToggleButton,
-                                summaryMode === 'semana' && styles.summaryToggleButtonActive,
-                            ]}
-                            onPress={() => setSummaryMode('semana')}
-                        >
-                            <Text
-                                style={[
-                                    styles.summaryToggleButtonText,
-                                    summaryMode === 'semana' && styles.summaryToggleButtonTextActive,
-                                ]}
-                            >
-                                Semana
+                    {hasDateRangeFilter ? (
+                        <View style={[styles.summaryToggleButton, styles.summaryToggleButtonActive]}>
+                            <Text style={[styles.summaryToggleButtonText, styles.summaryToggleButtonTextActive]}>
+                                Rango
                             </Text>
-                        </Pressable>
-                        <Pressable
-                            style={[
-                                styles.summaryToggleButton,
-                                summaryMode === 'mes' && styles.summaryToggleButtonActive,
-                            ]}
-                            onPress={() => setSummaryMode('mes')}
-                        >
-                            <Text
+                        </View>
+                    ) : (
+                        <View style={styles.summaryToggleRow}>
+                            <Pressable
                                 style={[
-                                    styles.summaryToggleButtonText,
-                                    summaryMode === 'mes' && styles.summaryToggleButtonTextActive,
+                                    styles.summaryToggleButton,
+                                    summaryMode === 'semana' && styles.summaryToggleButtonActive,
                                 ]}
+                                onPress={() => setSummaryMode('semana')}
                             >
-                                Mes
-                            </Text>
-                        </Pressable>
-                    </View>
+                                <Text
+                                    style={[
+                                        styles.summaryToggleButtonText,
+                                        summaryMode === 'semana' && styles.summaryToggleButtonTextActive,
+                                    ]}
+                                >
+                                    Semana
+                                </Text>
+                            </Pressable>
+                            <Pressable
+                                style={[
+                                    styles.summaryToggleButton,
+                                    summaryMode === 'mes' && styles.summaryToggleButtonActive,
+                                ]}
+                                onPress={() => setSummaryMode('mes')}
+                            >
+                                <Text
+                                    style={[
+                                        styles.summaryToggleButtonText,
+                                        summaryMode === 'mes' && styles.summaryToggleButtonTextActive,
+                                    ]}
+                                >
+                                    Mes
+                                </Text>
+                            </Pressable>
+                        </View>
+                    )}
                 </View>
 
-                <Text style={styles.summaryAmount}>${activeSummary.totalGain.toFixed(2)}</Text>
+                {!summaryHidden ? (
+                    <>
+                        <View style={styles.summaryMetricsGrid}>
+                            <View style={styles.summaryMetricCard}>
+                                <Text style={styles.summaryMetricLabel}>Costo total</Text>
+                                <Text style={styles.summaryMetricValue}>${activeSummary.totalCost.toFixed(2)}</Text>
+                            </View>
+                            <View style={styles.summaryMetricCard}>
+                                <Text style={styles.summaryMetricLabel}>Venta total</Text>
+                                <Text style={styles.summaryMetricValue}>${activeSummary.totalSale.toFixed(2)}</Text>
+                            </View>
+                            <View style={styles.summaryMetricCard}>
+                                <Text style={styles.summaryMetricLabel}>Ganancia total</Text>
+                                <Text style={styles.summaryMetricValue}>${activeSummary.totalGain.toFixed(2)}</Text>
+                            </View>
+                            <View style={styles.summaryMetricCard}>
+                                <Text style={styles.summaryMetricLabel}>Monto K</Text>
+                                <Text style={[styles.summaryMetricValue, styles.summaryMetricAccent]}>${activeSummary.totalK.toFixed(2)}</Text>
+                            </View>
+                        </View>
+                        <View style={styles.summaryFooterRow}>
+                            <Text style={styles.summaryMeta}>{activeSummary.totalCakes} torta(s) dentro del resumen.</Text>
+                            <Pressable
+                                style={styles.summaryCollapseButton}
+                                onPress={() => setSummaryHidden(true)}
+                            >
+                                <Ionicons name="chevron-up" size={14} color="#a54d75" />
+                            </Pressable>
+                        </View>
+                    </>
+                ) : (
+                    <View style={styles.summaryFooterRowCompact}>
+                        <Pressable
+                            style={styles.summaryCollapseButton}
+                            onPress={() => setSummaryHidden(false)}
+                        >
+                            <Ionicons name="chevron-down" size={14} color="#a54d75" />
+                        </Pressable>
+                    </View>
+                )}
 
             </View>
 
@@ -694,6 +906,24 @@ const CakesScreen: React.FC = () => {
                         ))
                     )}
                 </ScrollView>
+            )}
+
+            {showDateFromPicker && (
+                <DateTimePicker
+                    value={dateFrom ? parseDateKey(dateFrom) : today}
+                    mode="date"
+                    display="default"
+                    onChange={handleRangeDateChange('from')}
+                />
+            )}
+
+            {showDateToPicker && (
+                <DateTimePicker
+                    value={dateTo ? parseDateKey(dateTo) : today}
+                    mode="date"
+                    display="default"
+                    onChange={handleRangeDateChange('to')}
+                />
             )}
 
             {selectedCake && (

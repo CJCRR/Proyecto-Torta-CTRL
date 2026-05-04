@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useAppState } from '../store/AppState';
 import { AddCakeDraft, CakeShape } from '../types';
@@ -21,6 +22,7 @@ type LocalIngredientQty = {
     nombre: string;
     cantidad: string; // como texto, luego lo convertimos a número
     costoLinea: string; // precio unitario para este pastel (opcional)
+    esMontoK?: boolean;
 };
 
 const shapeOptions: { label: string; value: CakeShape }[] = [
@@ -28,6 +30,23 @@ const shapeOptions: { label: string; value: CakeShape }[] = [
     { label: 'Cuadrada', value: 'cuadrada' },
     { label: 'Otra', value: 'otra' },
 ];
+
+const formatDateKey = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+const parseDateKey = (dateKey: string) => {
+    const [year, month, day] = dateKey.split('-').map(Number);
+    return new Date(year, month - 1, day);
+};
+
+const formatDisplayDate = (dateKey: string) => {
+    const [year, month, day] = dateKey.split('-');
+    return `${day}-${month}-${year}`;
+};
 
 type AddCakeNav = import('@react-navigation/native').NavigationProp<RootTabParamList, 'Agregar'>;
 type AddCakeRoute = import('@react-navigation/native').RouteProp<RootTabParamList, 'Agregar'>;
@@ -46,6 +65,8 @@ const AddCakeScreen: React.FC = () => {
     const [montoVenta, setMontoVenta] = useState('');
     const [fotoUri, setFotoUri] = useState<string | undefined>(undefined);
     const [photoZoomed, setPhotoZoomed] = useState(false);
+    const [searchIngredient, setSearchIngredient] = useState('');
+    const [showCakeDatePicker, setShowCakeDatePicker] = useState(false);
 
     const [ingredientesLocal, setIngredientesLocal] = useState<LocalIngredientQty[]>([]);
 
@@ -58,6 +79,7 @@ const AddCakeScreen: React.FC = () => {
                 ingredientId: ing.id,
                 nombre: ing.nombre,
                 cantidad: qtyMap.get(ing.id) ?? '',
+                esMontoK: ing.esMontoK,
                 costoLinea:
                     Number.isFinite(ing.costoPorUnidad as unknown as number)
                         ? String(ing.costoPorUnidad)
@@ -99,6 +121,7 @@ const AddCakeScreen: React.FC = () => {
                     ingredientId: ing.id,
                     nombre: ing.nombre,
                     cantidad: duplicatedUsage ? String(duplicatedUsage.cantidad) : '',
+                    esMontoK: ing.esMontoK,
                     costoLinea:
                         duplicatedUsage?.costoLinea != null && !Number.isNaN(duplicatedUsage.costoLinea)
                             ? String(duplicatedUsage.costoLinea)
@@ -139,6 +162,16 @@ const AddCakeScreen: React.FC = () => {
 
         return venta - costoEstimado;
     }, [montoVenta, costoEstimado]);
+
+    const filteredIngredientesLocal = useMemo(() => {
+        const query = searchIngredient.trim().toLowerCase();
+
+        if (!query) {
+            return ingredientesLocal;
+        }
+
+        return ingredientesLocal.filter((item) => item.nombre.toLowerCase().includes(query));
+    }, [ingredientesLocal, searchIngredient]);
 
     // Actualiza la cantidad usada de un ingrediente en el formulario.
     const handleChangeCantidad = (id: string, value: string) => {
@@ -243,6 +276,17 @@ const AddCakeScreen: React.FC = () => {
         }
     };
 
+    // Abre el selector nativo para elegir la fecha de la torta.
+    const handleCakeDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+        setShowCakeDatePicker(false);
+
+        if (event.type !== 'set' || !selectedDate) {
+            return;
+        }
+
+        setFecha(formatDateKey(selectedDate));
+    };
+
     return (
         <View style={{ flex: 1 }}>
             <ScrollView
@@ -255,7 +299,7 @@ const AddCakeScreen: React.FC = () => {
 
                 <View style={styles.formSection}>
                     <TextInput
-                        placeholder="Nombre de la torta (opcional)"
+                        placeholder="Sabor (opcional)"
                         value={nombre}
                         onChangeText={setNombre}
                         placeholderTextColor="#b5a0c5"
@@ -268,13 +312,13 @@ const AddCakeScreen: React.FC = () => {
                         placeholderTextColor="#b5a0c5"
                         style={styles.input}
                     />
-                    <TextInput
-                        placeholder="Fecha (YYYY-MM-DD)"
-                        value={fecha}
-                        onChangeText={setFecha}
-                        placeholderTextColor="#b5a0c5"
-                        style={styles.input}
-                    />
+                    <Pressable
+                        onPress={() => setShowCakeDatePicker(true)}
+                        style={[styles.input, styles.dateFieldButton]}
+                    >
+                        <Text style={styles.dateFieldButtonText}>{formatDisplayDate(fecha)}</Text>
+                        <Ionicons name="calendar-outline" size={18} color="#a54d75" />
+                    </Pressable>
 
                     <Text style={styles.label}>Forma</Text>
                     <View style={styles.shapeRow}>
@@ -333,10 +377,32 @@ const AddCakeScreen: React.FC = () => {
                     </Text>
                 ) : (
                     <View style={{ marginBottom: 8 }}>
-                        {ingredientesLocal.map((item) => (
+                        <View style={[styles.searchBox, { marginBottom: 10 }]}> 
+                            <Ionicons name="search" size={18} color="#666" style={styles.searchIcon} />
+                            <TextInput
+                                placeholder="Buscar ingrediente"
+                                placeholderTextColor="#888"
+                                value={searchIngredient}
+                                onChangeText={setSearchIngredient}
+                                style={styles.filterInput}
+                                selectionColor="#e91e63"
+                                cursorColor="#e91e63"
+                                underlineColorAndroid="transparent"
+                                autoCorrect={false}
+                            />
+                        </View>
+
+                        {filteredIngredientesLocal.length === 0 ? (
+                            <Text style={styles.emptyText}>No hay ingredientes que coincidan con la búsqueda.</Text>
+                        ) : filteredIngredientesLocal.map((item) => (
                             <View key={item.ingredientId} style={styles.ingRow}>
                                 <View style={{ flex: 1 }}>
-                                    <Text style={styles.ingName}>{item.nombre}</Text>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                        <Text style={styles.ingName}>{item.nombre}</Text>
+                                        {item.esMontoK ? (
+                                            <Text style={styles.inlineKBadge}>K</Text>
+                                        ) : null}
+                                    </View>
                                 </View>
                                 <TextInput
                                     placeholder="Cant."
@@ -409,6 +475,15 @@ const AddCakeScreen: React.FC = () => {
                         resizeMode="contain"
                     />
                 </Pressable>
+            )}
+
+            {showCakeDatePicker && (
+                <DateTimePicker
+                    value={parseDateKey(fecha)}
+                    mode="date"
+                    display="default"
+                    onChange={handleCakeDateChange}
+                />
             )}
         </View>
     );

@@ -3,7 +3,7 @@ import { StyleSheet } from 'react-native';
 export const ingredientsStyles = StyleSheet.create({
     container: {
         flex: 1,
-        padding: 16,
+        padding: 12,
         backgroundColor: '#faf5ff',
     },
     title: {
@@ -35,11 +35,39 @@ export const ingredientsStyles = StyleSheet.create({
         backgroundColor: '#fff',
         fontSize: 14,
     },
+    searchBox: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        minHeight: 48,
+        borderWidth: 1,
+        borderColor: '#e0c4d9',
+        borderRadius: 12,
+        backgroundColor: '#fff',
+        paddingHorizontal: 12,
+        marginBottom: 12,
+    },
+    searchIcon: {
+        marginRight: 8,
+    },
+    filterInput: {
+        flex: 1,
+        paddingHorizontal: 0,
+        paddingVertical: 0,
+        minHeight: 44,
+        backgroundColor: 'transparent',
+        fontSize: 16,
+        color: '#111',
+    },
     sectionTitle: {
         fontSize: 18,
         fontWeight: '700',
-        marginBottom: 10,
+        marginBottom: 1,
         color: '#333',
+    },
+    itemNameRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
     },
     itemRow: {
         paddingVertical: 10,
@@ -57,9 +85,38 @@ export const ingredientsStyles = StyleSheet.create({
     itemSubtitle: {
         color: '#777',
     },
+    kBadge: {
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 999,
+        backgroundColor: '#ffe6f1',
+        color: '#b23c6b',
+        fontSize: 11,
+        fontWeight: '800',
+    },
     emptyText: {
         color: '#777',
         marginTop: 8,
+    },
+    kSwitchRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+        paddingHorizontal: 2,
+    },
+    kSwitchTextBlock: {
+        flex: 1,
+    },
+    kSwitchLabel: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#333',
+    },
+    kSwitchHint: {
+        marginTop: 1,
+        fontSize: 12,
+        color: '#85697a',
     },
     submitButton: {
         minHeight: 50,
@@ -90,5 +147,12 @@ export const ingredientsStyles = StyleSheet.create({
         backgroundColor: '#ef5350',
         alignItems: 'center',
         justifyContent: 'center',
+    },
+    headerActionsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    headerIconButton: {
+        marginRight: 12,
     },
 });

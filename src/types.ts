@@ -21,6 +21,7 @@ export interface Ingredient {
   nombre: string;
   unidad: string; // ej: 'kg', 'g', 'unidad', 'ml'
   costoPorUnidad: number;
+  esMontoK?: boolean;
   notas?: string;
 }
 
